@@ -6,3 +6,5 @@ There are many ways to do real-time pitch detection, but this one is optimized f
 
 The instrument / plugin needs JUCE 6 to build.
 
+![Weird little chomper guy](chomper.jpeg)
+
