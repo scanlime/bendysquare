@@ -3,16 +3,17 @@
 #include "BsqProcessor.h"
 #include <JuceHeader.h>
 
-class BsqAudioProcessorEditor : public juce::AudioProcessorEditor {
+class BsqEditor : public juce::AudioProcessorEditor {
 public:
-  BsqAudioProcessorEditor(BsqAudioProcessor &);
-  ~BsqAudioProcessorEditor() override;
+  BsqEditor(BsqProcessor &);
+  ~BsqEditor() override;
 
   void paint(juce::Graphics &) override;
   void resized() override;
 
 private:
-  BsqAudioProcessor &audioProcessor;
+  struct Parts;
+  std::unique_ptr<Parts> parts;
 
-  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BsqAudioProcessorEditor)
+  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BsqEditor)
 };
