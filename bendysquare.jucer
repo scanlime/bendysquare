@@ -4,7 +4,8 @@
               addUsingNamespaceToJuceHeader="0" displaySplashScreen="1" jucerFormatVersion="1"
               projectLineFeed="&#10;" companyName="scanlime" bundleIdentifier="org.scanlime.bendysquare"
               pluginCharacteristicsValue="pluginProducesMidiOut" pluginManufacturerCode="Scan"
-              pluginCode="Bsqr" aaxIdentifier="org.scanlime.bendysquare" pluginVST3Category="Analyzer">
+              pluginCode="Bsqr" aaxIdentifier="org.scanlime.bendysquare" pluginVST3Category="Analyzer"
+              pluginChannelConfigs="{1,0}">
   <MAINGROUP id="LYEX4Z" name="BendySquare">
     <GROUP id="{696A9A4A-E24F-EF92-CD39-ADA2AB768075}" name="Source">
       <FILE id="TNYWFA" name="BsqProcessor.cpp" compile="1" resource="0"

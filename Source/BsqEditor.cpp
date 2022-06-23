@@ -66,19 +66,46 @@ public:
 
 private:
   juce::OwnedArray<ParamKnob> knobs;
-
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ParamPanel)
 };
 
-class WavePanel : public juce::Component {
+class WavePanel : public juce::Component, private juce::Timer {
 public:
-  WavePanel(BsqProcessor &processor) : processor(processor) {}
+  WavePanel(BsqProcessor &processor) : processor(processor) {
+    startTimerHz(20);
+  }
 
-  void paint(juce::Graphics &) override {}
+  void paint(juce::Graphics &g) override {
+    auto &tr = processor.trace;
+    juce::Path signal, threshold;
 
-  void resized() override {}
+    auto yAxis = [h = getHeight()](float y) { return h * (-y * 0.5f + 0.5f); };
+
+    for (int i = 0; i < juce::jmin<int>(getWidth(), tr.numColumns); i++) {
+      auto &column =
+          tr.buffer[(tr.syncColumn + tr.numColumns - getWidth() + i) %
+                    tr.numColumns];
+      if (i == 0) {
+        signal.startNewSubPath(0, yAxis(column.signal));
+        threshold.startNewSubPath(0, yAxis(column.threshold));
+      } else {
+        signal.lineTo(i, yAxis(column.signal));
+        threshold.lineTo(i, yAxis(column.threshold));
+      }
+    }
+
+    auto bg =
+        getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
+    g.fillAll(bg);
+    g.setColour(bg.contrasting(0.5f));
+    g.strokePath(threshold, juce::PathStrokeType(1.2f));
+    g.setColour(bg.contrasting(1.f));
+    g.strokePath(signal, juce::PathStrokeType(1.6f));
+  }
 
 private:
+  void timerCallback() override { repaint(); }
+
   BsqProcessor &processor;
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WavePanel)
 };
@@ -95,9 +122,9 @@ struct BsqEditor::Parts {
                                         "pitch_bend_range",
                                         "filter_highpass",
                                         "filter_lowpass",
+                                        "gain_db",
                                         "trig_level",
                                         "trig_hysteresis",
-
                                     }),
                  }),
         keyboard(p.midiState, juce::MidiKeyboardComponent::horizontalKeyboard) {

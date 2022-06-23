@@ -2,8 +2,21 @@
 
 #include <JuceHeader.h>
 
-class BsqProcessor : public juce::AudioProcessor {
+class BsqProcessor : public juce::AudioProcessor,
+                     private juce::ValueTree::Listener {
 public:
+  struct TraceBuffer {
+    static constexpr int samplesPerColumn = 2;
+    static constexpr int numColumns = 1024;
+
+    struct Column {
+      float signal, threshold;
+    };
+
+    Column buffer[numColumns];
+    int writeColumn, syncColumn;
+  };
+
   BsqProcessor();
   ~BsqProcessor() override;
 
@@ -33,7 +46,32 @@ public:
 
   juce::AudioProcessorValueTreeState state;
   juce::MidiKeyboardState midiState;
+  TraceBuffer trace;
 
 private:
+  void attachToState();
+  void updateFromState();
+  void valueTreePropertyChanged(juce::ValueTree &,
+                                const juce::Identifier &) override;
+  void processEdges(juce::MidiBuffer &midi, const float *samples,
+                    int numSamples);
+  void updatePitch(juce::MidiBuffer &midi, int atSample, float hz);
+  void signalLost(juce::MidiBuffer &midi, int atSample);
+
+  struct EdgeDetector {
+    struct Edge {
+      int timer{0}, period{0};
+    };
+    Edge edges[2];
+    int state{0};
+  };
+
+  double currentSampleRate{0};
+  int currentNote{-1};
+  int midiChannel{1};
+  float gain{1};
+  juce::IIRFilter highPassFilter, lowPassFilter;
+  EdgeDetector detector;
+
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BsqProcessor)
 };
