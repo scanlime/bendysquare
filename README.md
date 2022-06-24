@@ -4,7 +4,9 @@ Convert square wave to MIDI with pitch bend, for monophonic synths like the Otam
 
 There are many ways to do real-time pitch detection, but this one is optimized for low latency and high accuracy when the input is a simple square wave.
 
-The app / plugin needs JUCE 6 to build.
+This is an LV2 plugin that needs JUCE 7 to build.
+
+![Screenshot](screenshot.jpeg)
 
 ![Weird little chomper guy](chomper.jpeg)
 
