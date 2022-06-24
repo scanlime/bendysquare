@@ -63,6 +63,12 @@ void BsqProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   processEdges(midiMessages, buffer.getReadPointer(0), buffer.getNumSamples());
   midiState.processNextMidiBuffer(midiMessages, 0, buffer.getNumSamples(),
                                   true);
+
+#if DEBUG
+  for (auto metadata : midiMessages) {
+    printf("midi %s\n", metadata.getMessage().getDescription().toUTF8());
+  }
+#endif
 }
 
 void BsqProcessor::processEdges(juce::MidiBuffer &midi, const float *samples,
@@ -78,7 +84,7 @@ void BsqProcessor::processEdges(juce::MidiBuffer &midi, const float *samples,
                                 : (triggerLevel + triggerHysteresis);
 
     if ((sample % TraceBuffer::samplesPerColumn) == 0) {
-      int c = trace.writeColumn;
+      auto c = juce::jlimit(0, TraceBuffer::numColumns - 1, trace.writeColumn);
       trace.buffer[c] = {signal, threshold};
       trace.writeColumn = (c + 1) % TraceBuffer::numColumns;
     }
@@ -103,10 +109,10 @@ void BsqProcessor::processEdges(juce::MidiBuffer &midi, const float *samples,
     }
 
     // Every edge can generate a pitch change event
+    int avgPeriod = (det.edges[0].period + det.edges[1].period) / 2;
     if (edgeDetected) {
-      updatePitch(midi, sample,
-                  currentSampleRate / (1 + det.edges[det.state].period));
-    } else if (det.edges[det.state].timer > det.edges[det.state].period * 2) {
+      updatePitch(midi, sample, currentSampleRate / (1 + avgPeriod));
+    } else if (det.edges[det.state].timer > avgPeriod * 2) {
       signalLost(midi, sample);
     }
   }
@@ -135,10 +141,13 @@ void BsqProcessor::updatePitch(juce::MidiBuffer &midi, int atSample, float hz) {
     currentNote = std::round(note);
   }
 
-  midi.addEvent(juce::MidiMessage::pitchWheel(
-                    midiChannel, juce::MidiMessage::pitchbendToPitchwheelPos(
-                                     note - currentNote, pitchBendRange)),
-                atSample);
+  int nextWheelPos = juce::MidiMessage::pitchbendToPitchwheelPos(
+      note - currentNote, pitchBendRange);
+  if (nextWheelPos != currentWheelPos) {
+    currentWheelPos = nextWheelPos;
+    midi.addEvent(juce::MidiMessage::pitchWheel(midiChannel, nextWheelPos),
+                  atSample);
+  }
 
   if (noteOn) {
     midi.addEvent(juce::MidiMessage::noteOn(midiChannel, currentNote, 1.f),

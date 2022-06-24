@@ -68,6 +68,7 @@ private:
 
   double currentSampleRate{0};
   int currentNote{-1};
+  int currentWheelPos{-1};
   int midiChannel{1};
   float gain{1};
   juce::IIRFilter highPassFilter, lowPassFilter;
