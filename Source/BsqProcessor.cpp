@@ -7,25 +7,25 @@ BsqProcessor::BsqProcessor()
       state(*this, nullptr, "state",
             {
                 std::make_unique<juce::AudioParameterInt>(
-                    "midi_ch", "MIDI Channel", 1, 16, 1),
+                    "midi_ch", "MIDI Channel", 1, 16, 4),
                 std::make_unique<juce::AudioParameterFloat>(
-                    "pitch_bend_range", "Pitch Bend",
+                    "pitch_bend_range", "Pitch Bend Range",
                     juce::NormalisableRange<float>(1, 64), 2.0f),
                 std::make_unique<juce::AudioParameterFloat>(
-                    "filter_highpass", "High Pass",
-                    juce::NormalisableRange<float>(0, 500), 30.f),
+                    "filter_highpass", "High Pass Hz",
+                    juce::NormalisableRange<float>(0, 500), 20.f),
                 std::make_unique<juce::AudioParameterFloat>(
-                    "filter_lowpass", "Low Pass",
+                    "filter_lowpass", "Low Pass Hz",
                     juce::NormalisableRange<float>(0, 5000), 800.f),
                 std::make_unique<juce::AudioParameterFloat>(
                     "gain_db", "Gain dB", juce::NormalisableRange<float>(0, 50),
                     10.f),
                 std::make_unique<juce::AudioParameterFloat>(
                     "trig_level", "Trigger Level",
-                    juce::NormalisableRange<float>(-1, 1), -0.03f),
+                    juce::NormalisableRange<float>(-1, 1), -0.1f),
                 std::make_unique<juce::AudioParameterFloat>(
                     "trig_hysteresis", "Hysteresis",
-                    juce::NormalisableRange<float>(0, 1), 0.05f),
+                    juce::NormalisableRange<float>(0, 1), 0.1f),
             }) {
   attachToState();
 }
@@ -135,6 +135,10 @@ void BsqProcessor::updatePitch(juce::MidiBuffer &midi, int atSample, float hz) {
     return;
   }
 
+  float instantaneousTuning = note - std::round(note);
+  static constexpr float tuningExpRate = 0.05;
+  tuningFeedback += (instantaneousTuning - tuningFeedback) * tuningExpRate;
+
   bool noteOn =
       (currentNote < 0 || std::abs(note - currentNote) >= pitchBendRange);
   bool noteOff = (noteOn && currentNote >= 0);
@@ -165,8 +169,9 @@ void BsqProcessor::signalLost(juce::MidiBuffer &midi, int atSample) {
   if (currentNote >= 0) {
     midi.addEvent(juce::MidiMessage::noteOff(midiChannel, currentNote, 0.f),
                   atSample);
-    currentNote = -1;
   }
+  currentNote = -1;
+  tuningFeedback = 0;
 }
 
 juce::AudioProcessorEditor *BsqProcessor::createEditor() {

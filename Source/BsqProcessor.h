@@ -47,6 +47,7 @@ public:
   juce::AudioProcessorValueTreeState state;
   juce::MidiKeyboardState midiState;
   TraceBuffer trace;
+  float tuningFeedback;
 
 private:
   void attachToState();

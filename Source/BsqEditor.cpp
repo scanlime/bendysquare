@@ -72,7 +72,7 @@ private:
 class WavePanel : public juce::Component, private juce::Timer {
 public:
   WavePanel(BsqProcessor &processor) : processor(processor) {
-    startTimerHz(20);
+    startTimerHz(15);
   }
 
   void paint(juce::Graphics &g) override {
@@ -105,32 +105,61 @@ public:
 
 private:
   void timerCallback() override { repaint(); }
-
   BsqProcessor &processor;
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WavePanel)
 };
 
+class TunerPanel : public juce::Component, private juce::Timer {
+public:
+  TunerPanel(BsqProcessor &processor) : processor(processor) {
+    startTimerHz(60);
+  }
+
+  void paint(juce::Graphics &g) override {
+    auto value = processor.tuningFeedback;
+    auto bg =
+        getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
+    g.fillAll(bg);
+    g.setColour((value > 0.1    ? juce::Colours::blue
+                 : value < -0.1 ? juce::Colours::red
+                                : juce::Colours::yellow)
+                    .interpolatedWith(bg.contrasting(), 0.7));
+    auto r = getLocalBounds().toFloat().reduced(2);
+    r.setHorizontalRange(juce::Range<float>::between(
+        r.getCentreX(), r.getCentreX() + r.getWidth() * value));
+    if (r.getWidth() > 0) {
+      g.fillRect(r);
+    }
+  }
+
+private:
+  void timerCallback() override { repaint(); }
+  BsqProcessor &processor;
+  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TunerPanel)
+};
+
 struct BsqEditor::Parts {
   WavePanel wave;
+  TunerPanel tuner;
   juce::OwnedArray<ParamPanel> params;
   juce::MidiKeyboardComponent keyboard;
 
   Parts(BsqProcessor &p)
-      : wave(p), params({
-                     new ParamPanel(p,
-                                    {
-                                        "midi_ch",
-                                        "pitch_bend_range",
-                                        "trig_level",
-                                    }),
-                     new ParamPanel(p,
-                                    {
-                                        "trig_hysteresis",
-                                        "filter_highpass",
-                                        "filter_lowpass",
-                                        "gain_db",
-                                    }),
-                 }),
+      : wave(p), tuner(p), params({
+                               new ParamPanel(p,
+                                              {
+                                                  "midi_ch",
+                                                  "pitch_bend_range",
+                                                  "gain_db",
+                                              }),
+                               new ParamPanel(p,
+                                              {
+                                                  "trig_level",
+                                                  "trig_hysteresis",
+                                                  "filter_highpass",
+                                                  "filter_lowpass",
+                                              }),
+                           }),
         keyboard(p.midiState, juce::MidiKeyboardComponent::horizontalKeyboard) {
   }
 };
@@ -139,6 +168,7 @@ BsqEditor::BsqEditor(BsqProcessor &p)
     : AudioProcessorEditor(&p), parts(std::make_unique<Parts>(p)) {
 
   addAndMakeVisible(parts->wave);
+  addAndMakeVisible(parts->tuner);
   addAndMakeVisible(parts->keyboard);
   for (auto &part : parts->params) {
     addAndMakeVisible(part);
@@ -146,9 +176,9 @@ BsqEditor::BsqEditor(BsqProcessor &p)
 
   parts->keyboard.setKeyPressBaseOctave(4);
   parts->keyboard.setLowestVisibleKey(3 * 12);
-  parts->keyboard.setVelocity(0.7, true);
+  parts->keyboard.setVelocity(1., false);
 
-  setSize(340, 340);
+  setSize(340, 300);
 }
 
 BsqEditor::~BsqEditor() {}
@@ -162,9 +192,10 @@ void BsqEditor::resized() {
   juce::FlexBox box;
   box.flexDirection = juce::FlexBox::Direction::column;
   for (auto &part : parts->params) {
-    box.items.add(juce::FlexItem(*part).withMinHeight(70).withFlex(1));
+    box.items.add(juce::FlexItem(*part).withMinHeight(60).withFlex(1));
   }
   box.items.add(juce::FlexItem(parts->wave).withMinHeight(50).withFlex(1));
-  box.items.add(juce::FlexItem(parts->keyboard).withMinHeight(30).withFlex(1));
+  box.items.add(juce::FlexItem(parts->tuner).withMinHeight(4).withFlex(1));
+  box.items.add(juce::FlexItem(parts->keyboard).withMinHeight(25).withFlex(1));
   box.performLayout(getLocalBounds().toFloat());
 }
