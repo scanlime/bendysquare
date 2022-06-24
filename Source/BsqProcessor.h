@@ -64,6 +64,7 @@ private:
     };
     Edge edges[2];
     int state{0};
+    int counter{0};
   };
 
   double currentSampleRate{0};

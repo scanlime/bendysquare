@@ -6,6 +6,8 @@ BsqProcessor::BsqProcessor()
           "Input", juce::AudioChannelSet::mono(), true)),
       state(*this, nullptr, "state",
             {
+                std::make_unique<juce::AudioParameterInt>(
+                    "midi_ch", "MIDI Channel", 1, 16, 1),
                 std::make_unique<juce::AudioParameterFloat>(
                     "pitch_bend_range", "Pitch Bend",
                     juce::NormalisableRange<float>(1, 64), 2.0f),
@@ -111,8 +113,12 @@ void BsqProcessor::processEdges(juce::MidiBuffer &midi, const float *samples,
     // Every edge can generate a pitch change event
     int avgPeriod = (det.edges[0].period + det.edges[1].period) / 2;
     if (edgeDetected) {
-      updatePitch(midi, sample, currentSampleRate / (1 + avgPeriod));
+      static constexpr int noteOnLatency = 4;
+      if (++det.counter > noteOnLatency) {
+        updatePitch(midi, sample, currentSampleRate / (1 + avgPeriod));
+      }
     } else if (det.edges[det.state].timer > avgPeriod * 2) {
+      det.counter = 0;
       signalLost(midi, sample);
     }
   }
@@ -182,6 +188,7 @@ void BsqProcessor::setStateInformation(const void *data, int sizeInBytes) {
 void BsqProcessor::attachToState() { state.state.addListener(this); }
 
 void BsqProcessor::updateFromState() {
+  midiChannel = state.getParameterAsValue("midi_ch").getValue();
   gain = juce::Decibels::decibelsToGain<float>(
       state.getParameterAsValue("gain_db").getValue());
   highPassFilter.setCoefficients(juce::IIRCoefficients::makeHighPass(

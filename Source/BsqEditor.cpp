@@ -119,12 +119,16 @@ struct BsqEditor::Parts {
       : wave(p), params({
                      new ParamPanel(p,
                                     {
+                                        "midi_ch",
                                         "pitch_bend_range",
+                                        "trig_level",
+                                    }),
+                     new ParamPanel(p,
+                                    {
+                                        "trig_hysteresis",
                                         "filter_highpass",
                                         "filter_lowpass",
                                         "gain_db",
-                                        "trig_level",
-                                        "trig_hysteresis",
                                     }),
                  }),
         keyboard(p.midiState, juce::MidiKeyboardComponent::horizontalKeyboard) {
@@ -144,7 +148,7 @@ BsqEditor::BsqEditor(BsqProcessor &p)
   parts->keyboard.setLowestVisibleKey(3 * 12);
   parts->keyboard.setVelocity(0.7, true);
 
-  setSize(450, 220);
+  setSize(340, 340);
 }
 
 BsqEditor::~BsqEditor() {}
@@ -157,10 +161,10 @@ void BsqEditor::paint(juce::Graphics &g) {
 void BsqEditor::resized() {
   juce::FlexBox box;
   box.flexDirection = juce::FlexBox::Direction::column;
-  box.items.add(juce::FlexItem(parts->wave).withMinHeight(30).withFlex(1));
   for (auto &part : parts->params) {
     box.items.add(juce::FlexItem(*part).withMinHeight(70).withFlex(1));
   }
+  box.items.add(juce::FlexItem(parts->wave).withMinHeight(50).withFlex(1));
   box.items.add(juce::FlexItem(parts->keyboard).withMinHeight(30).withFlex(1));
   box.performLayout(getLocalBounds().toFloat());
 }
