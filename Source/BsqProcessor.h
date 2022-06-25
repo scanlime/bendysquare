@@ -5,14 +5,19 @@
 class BsqProcessor : public juce::AudioProcessor,
                      private juce::ValueTree::Listener {
 public:
-  struct TraceBuffer {
-    static constexpr int samplesPerColumn = 2;
-    static constexpr int numColumns = 1024;
-
+  class TraceBuffer {
+  public:
     struct Column {
       float signal, threshold;
     };
 
+    Column getDisplayColumn(int x, int width) const;
+    void store(const Column &c, int atSample);
+    void sync();
+
+  private:
+    static constexpr int samplesPerColumn = 2;
+    static constexpr int numColumns = 1024;
     Column buffer[numColumns];
     int writeColumn, syncColumn;
   };
@@ -56,25 +61,43 @@ private:
                                 const juce::Identifier &) override;
   void processEdges(juce::MidiBuffer &midi, const float *samples,
                     int numSamples);
-  void updatePitch(juce::MidiBuffer &midi, int atSample, float hz);
+  void edgeDetected(juce::MidiBuffer &midi, int atSample, int period);
   void signalLost(juce::MidiBuffer &midi, int atSample);
 
-  struct EdgeDetector {
-    struct Edge {
-      int timer{0}, period{0};
-    };
-    Edge edges[2];
+  class EdgeDetector {
+  public:
+    bool next(int newState, int &period);
+    int getState();
+    int getTimer();
+
+  private:
+    int timers[2]{0, 0};
     int state{0};
+  };
+
+  struct PitchFilter {
+  public:
+    void resize(int);
+    void next(int);
+    float getAverage();
+    bool isFull();
+    void clear();
+
+  private:
+    std::mutex mutex;
+    std::vector<int> buffer;
     int counter{0};
+    int total{0};
   };
 
   double currentSampleRate{0};
   int currentNote{-1};
   int currentWheelPos{-1};
   int midiChannel{1};
-  float gain{1};
+  float gain{1}, pitchBendRange{1}, triggerLevel{0}, triggerHysteresis{0};
   juce::IIRFilter highPassFilter, lowPassFilter;
-  EdgeDetector detector;
+  PitchFilter pitchFilter;
+  EdgeDetector edgeDetector;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BsqProcessor)
 };

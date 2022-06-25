@@ -7,7 +7,9 @@ BsqProcessor::BsqProcessor()
       state(*this, nullptr, "state",
             {
                 std::make_unique<juce::AudioParameterInt>(
-                    "midi_ch", "MIDI Channel", 1, 16, 4),
+                    "midi_ch", "MIDI Channel", 1, 16, 2),
+                std::make_unique<juce::AudioParameterInt>(
+                    "pitch_filter", "Pitch Filter", 1, 100, 10),
                 std::make_unique<juce::AudioParameterFloat>(
                     "pitch_bend_range", "Pitch Bend Range",
                     juce::NormalisableRange<float>(1, 64), 2.0f),
@@ -31,6 +33,80 @@ BsqProcessor::BsqProcessor()
 }
 
 BsqProcessor::~BsqProcessor() {}
+
+BsqProcessor::TraceBuffer::Column
+BsqProcessor::TraceBuffer::getDisplayColumn(int x, int width) const {
+  return buffer[juce::jmax<int>(0, syncColumn + numColumns - width + x) %
+                numColumns];
+}
+
+void BsqProcessor::TraceBuffer::store(const Column &c, int atSample) {
+  if ((atSample % samplesPerColumn) == 0) {
+    auto slot = juce::jlimit(0, TraceBuffer::numColumns - 1, writeColumn);
+    buffer[slot] = c;
+    writeColumn = (slot + 1) % TraceBuffer::numColumns;
+  }
+}
+
+void BsqProcessor::TraceBuffer::sync() { syncColumn = writeColumn; }
+
+bool BsqProcessor::EdgeDetector::next(int newState, int &period) {
+  jassert(newState == 0 || newState == 1);
+  bool edgeDetected = newState != state;
+  state = newState;
+  for (int edge = 0; edge < 2; edge++) {
+    if (edgeDetected && state == edge) {
+      period = 1 + timers[edge];
+      timers[edge] = 0;
+    } else {
+      timers[edge]++;
+    }
+  }
+  return edgeDetected;
+}
+
+int BsqProcessor::EdgeDetector::getState() { return state; }
+
+int BsqProcessor::EdgeDetector::getTimer() { return timers[state]; }
+
+void BsqProcessor::PitchFilter::resize(int newSize) {
+  std::lock_guard<std::mutex> guard(mutex);
+  buffer.resize(newSize);
+  total = 0;
+  for (int i = 0; i < newSize; i++) {
+    total += buffer[i];
+  }
+}
+
+void BsqProcessor::PitchFilter::next(int latestPeriod) {
+  std::lock_guard<std::mutex> guard(mutex);
+  int slot = ++counter % buffer.size();
+  if (counter > buffer.size()) {
+    total -= buffer[slot];
+  }
+  total += buffer[slot] = latestPeriod;
+}
+
+float BsqProcessor::PitchFilter::getAverage() {
+  std::lock_guard<std::mutex> guard(mutex);
+  if (counter >= buffer.size()) {
+    return float(total) / float(buffer.size());
+  } else if (counter > 0) {
+    return float(total) / counter;
+  } else {
+    return 0.f;
+  }
+}
+
+bool BsqProcessor::PitchFilter::isFull() {
+  std::lock_guard<std::mutex> guard(mutex);
+  return counter >= buffer.size();
+}
+
+void BsqProcessor::PitchFilter::clear() {
+  counter = 0;
+  total = 0;
+}
 
 bool BsqProcessor::hasEditor() const { return true; }
 const juce::String BsqProcessor::getName() const { return JucePlugin_Name; }
@@ -65,79 +141,43 @@ void BsqProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   processEdges(midiMessages, buffer.getReadPointer(0), buffer.getNumSamples());
   midiState.processNextMidiBuffer(midiMessages, 0, buffer.getNumSamples(),
                                   true);
-
-#if DEBUG
-  for (auto metadata : midiMessages) {
-    printf("midi %s\n", metadata.getMessage().getDescription().toUTF8());
-  }
-#endif
 }
 
 void BsqProcessor::processEdges(juce::MidiBuffer &midi, const float *samples,
                                 int numSamples) {
-  EdgeDetector det = detector;
-  float triggerHysteresis =
-      state.getParameterAsValue("trig_hysteresis").getValue();
-  float triggerLevel = state.getParameterAsValue("trig_level").getValue();
-
+  EdgeDetector det = edgeDetector;
   for (int sample = 0; sample < numSamples; sample++) {
+    int period;
     float signal = gain * samples[sample];
-    float threshold = det.state ? (triggerLevel - triggerHysteresis)
-                                : (triggerLevel + triggerHysteresis);
-
-    if ((sample % TraceBuffer::samplesPerColumn) == 0) {
-      auto c = juce::jlimit(0, TraceBuffer::numColumns - 1, trace.writeColumn);
-      trace.buffer[c] = {signal, threshold};
-      trace.writeColumn = (c + 1) % TraceBuffer::numColumns;
-    }
-
-    int nextState = signal > threshold;
-    bool edgeDetected = (nextState != det.state);
-    det.state = nextState;
-
-    // Time both rising and falling edges separately
-    for (int edge = 0; edge < 2; edge++) {
-      if (edgeDetected && det.state == edge) {
-        det.edges[edge].period = det.edges[edge].timer;
-        det.edges[edge].timer = 0;
-      } else {
-        det.edges[edge].timer++;
+    float threshold = det.getState() ? (triggerLevel - triggerHysteresis)
+                                     : (triggerLevel + triggerHysteresis);
+    trace.store({signal, threshold}, sample);
+    if (det.next(signal > threshold, period)) {
+      edgeDetected(midi, sample, period);
+      if (det.getState()) {
+        trace.sync();
       }
-    }
-
-    // Scope trigger
-    if (edgeDetected && det.state) {
-      trace.syncColumn = trace.writeColumn;
-    }
-
-    // Every edge can generate a pitch change event
-    int avgPeriod = (det.edges[0].period + det.edges[1].period) / 2;
-    if (edgeDetected) {
-      static constexpr int noteOnLatency = 4;
-      if (++det.counter > noteOnLatency) {
-        updatePitch(midi, sample, currentSampleRate / (1 + avgPeriod));
-      }
-    } else if (det.edges[det.state].timer > avgPeriod * 2) {
-      det.counter = 0;
+    } else if (pitchFilter.isFull() &&
+               det.getTimer() > pitchFilter.getAverage() * 2) {
       signalLost(midi, sample);
     }
   }
-
-  detector = det;
+  edgeDetector = det;
 }
 
-void BsqProcessor::updatePitch(juce::MidiBuffer &midi, int atSample, float hz) {
-  float pitchBendRange =
-      state.getParameterAsValue("pitch_bend_range").getValue();
-
+void BsqProcessor::edgeDetected(juce::MidiBuffer &midi, int atSample,
+                                int period) {
+  pitchFilter.next(period);
+  if (!pitchFilter.isFull()) {
+    return;
+  }
+  float hz = currentSampleRate / pitchFilter.getAverage();
   auto note = std::log2(hz / 440.f) * 12.f + 69.f;
   if (note <= 0.f || note >= 127.f) {
     return;
   }
 
-  float instantaneousTuning = note - std::round(note);
-  static constexpr float tuningExpRate = 0.05;
-  tuningFeedback += (instantaneousTuning - tuningFeedback) * tuningExpRate;
+  tuningFeedback = note - std::round(note);
 
   bool noteOn =
       (currentNote < 0 || std::abs(note - currentNote) >= pitchBendRange);
@@ -170,6 +210,7 @@ void BsqProcessor::signalLost(juce::MidiBuffer &midi, int atSample) {
     midi.addEvent(juce::MidiMessage::noteOff(midiChannel, currentNote, 0.f),
                   atSample);
   }
+  pitchFilter.clear();
   currentNote = -1;
   tuningFeedback = 0;
 }
@@ -193,6 +234,10 @@ void BsqProcessor::setStateInformation(const void *data, int sizeInBytes) {
 void BsqProcessor::attachToState() { state.state.addListener(this); }
 
 void BsqProcessor::updateFromState() {
+  pitchFilter.resize(state.getParameterAsValue("pitch_filter").getValue());
+  triggerHysteresis = state.getParameterAsValue("trig_hysteresis").getValue();
+  triggerLevel = state.getParameterAsValue("trig_level").getValue();
+  pitchBendRange = state.getParameterAsValue("pitch_bend_range").getValue();
   midiChannel = state.getParameterAsValue("midi_ch").getValue();
   gain = juce::Decibels::decibelsToGain<float>(
       state.getParameterAsValue("gain_db").getValue());

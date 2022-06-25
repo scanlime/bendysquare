@@ -76,15 +76,12 @@ public:
   }
 
   void paint(juce::Graphics &g) override {
-    auto &tr = processor.trace;
     juce::Path signal, threshold;
 
     auto yAxis = [h = getHeight()](float y) { return h * (-y * 0.5f + 0.5f); };
 
-    for (int i = 0; i < juce::jmin<int>(getWidth(), tr.numColumns); i++) {
-      auto &column =
-          tr.buffer[(tr.syncColumn + tr.numColumns - getWidth() + i) %
-                    tr.numColumns];
+    for (int i = 0; i < getWidth(); i++) {
+      auto column = processor.trace.getDisplayColumn(i, getWidth());
       if (i == 0) {
         signal.startNewSubPath(0, yAxis(column.signal));
         threshold.startNewSubPath(0, yAxis(column.threshold));
@@ -150,6 +147,7 @@ struct BsqEditor::Parts {
                                               {
                                                   "midi_ch",
                                                   "pitch_bend_range",
+                                                  "pitch_filter",
                                                   "gain_db",
                                               }),
                                new ParamPanel(p,
@@ -178,7 +176,7 @@ BsqEditor::BsqEditor(BsqProcessor &p)
   parts->keyboard.setLowestVisibleKey(3 * 12);
   parts->keyboard.setVelocity(1., false);
 
-  setSize(340, 300);
+  setSize(320, 320);
 }
 
 BsqEditor::~BsqEditor() {}
