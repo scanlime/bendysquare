@@ -9,7 +9,7 @@ BsqProcessor::BsqProcessor()
                 std::make_unique<juce::AudioParameterInt>(
                     "midi_ch", "MIDI Channel", 1, 16, 2),
                 std::make_unique<juce::AudioParameterInt>(
-                    "pitch_filter", "Pitch Filter", 1, 100, 10),
+                    "pitch_filter", "Pitch Filter", 1, 100, 5),
                 std::make_unique<juce::AudioParameterFloat>(
                     "pitch_bend_range", "Pitch Bend Range",
                     juce::NormalisableRange<float>(1, 64), 2.0f),
@@ -98,6 +98,8 @@ float BsqProcessor::PitchFilter::getAverage() {
   }
 }
 
+bool BsqProcessor::PitchFilter::isEmpty() { return counter <= 0; }
+
 bool BsqProcessor::PitchFilter::isFull() {
   std::lock_guard<std::mutex> guard(mutex);
   return counter >= buffer.size();
@@ -157,7 +159,7 @@ void BsqProcessor::processEdges(juce::MidiBuffer &midi, const float *samples,
       if (det.getState()) {
         trace.sync();
       }
-    } else if (pitchFilter.isFull() &&
+    } else if (!pitchFilter.isEmpty() &&
                det.getTimer() > pitchFilter.getAverage() * 2) {
       signalLost(midi, sample);
     }

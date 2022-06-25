@@ -81,6 +81,7 @@ private:
     void next(int);
     float getAverage();
     bool isFull();
+    bool isEmpty();
     void clear();
 
   private:
